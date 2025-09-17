@@ -65,7 +65,7 @@ class OCRSettings:
 class AgentSettings:
     """Agentic automation settings."""
     use_llm: bool = True
-    max_tool_calls: int = 25
+    max_tool_calls: int = 50
     max_retries_per_step: int = 3
     enable_tool_logging: bool = True
     enable_structured_logs: bool = True
@@ -74,6 +74,9 @@ class AgentSettings:
     llm_decision_threshold: int = 1  # errors before using LLM
     enable_fallback_rules: bool = True
     policy_temperature: float = 0.2
+
+    # NEW: raise LangGraph recursion ceiling
+    recursion_limit: int = 150
 
     # Success detection
     success_keywords: list = None

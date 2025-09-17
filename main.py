@@ -11,6 +11,7 @@ import uuid
 import traceback
 from typing import Dict, Any
 from datetime import datetime
+from backend.settings import agent_settings
 
 # Add project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -80,7 +81,10 @@ def run_manual_automation(args) -> Dict[str, Any]:
         use_llm = not args.no_llm
         agent = create_agentic_outlook_agent(
             use_llm=use_llm,
-            provider=args.llm_provider
+            provider=args.llm_provider,
+            max_tool_calls=agent_settings.max_tool_calls,
+            recursion_limit=agent_settings.recursion_limit,
+
         )
 
         print(f"✅ [MANUAL] Agentic agent created successfully")
