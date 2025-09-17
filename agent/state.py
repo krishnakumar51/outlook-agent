@@ -1,242 +1,323 @@
 #!/usr/bin/env python3
 """
-Outlook Mobile Agent State Management
-Defines the state structure for LangGraph agent
+Agent State - Enhanced state management for agentic mobile automation
+UPDATED: Added password_typed flag support for proper PASSWORD step handling
 """
 
+from typing import Dict, Any, List, Optional, Union, TypedDict, Annotated
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 from datetime import datetime
+import time
+import hashlib
+import uuid
+from enum import Enum
+
+# LangGraph imports for proper state typing
+from langgraph.graph.message import AnyMessage, add_messages
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+
+class WorkflowStep(Enum):
+    """Enumeration of workflow steps for Outlook account creation."""
+    INIT = "init"
+    WELCOME = "welcome"
+    EMAIL = "email"
+    PASSWORD = "password"
+    DETAILS = "details"
+    NAME = "name"
+    CAPTCHA = "captcha"
+    AUTH_WAIT = "auth_wait"
+    POST_AUTH = "post_auth"
+    VERIFY = "verify"
+    CLEANUP = "cleanup"
+    ERROR = "error"
 
 @dataclass
 class OutlookAccountData:
-    """Outlook account data structure"""
+    """Container for Outlook account generation data."""
+
     username: str
     email: str
     password: str
     first_name: str
     last_name: str
-    birth_day: int
-    birth_month: str  # Full month name
-    birth_year: int
+    date_of_birth: str
+    curp_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary"""
+        """Convert to dictionary for serialization."""
         return {
             "username": self.username,
-            "email": self.email, 
+            "email": self.email,
             "password": self.password,
             "first_name": self.first_name,
             "last_name": self.last_name,
-            "birth_day": self.birth_day,
-            "birth_month": self.birth_month,
-            "birth_year": self.birth_year
+            "date_of_birth": self.date_of_birth,
+            "curp_id": self.curp_id
         }
 
 @dataclass
-class OutlookAgentState:
-    """State for Outlook Mobile Agent workflow"""
+class ToolCallRecord:
+    """Record of a single tool call execution."""
 
-    # Input data
-    process_id: str
-    curp_id: Optional[str] = None
-    first_name: str = ""
-    last_name: str = ""  
-    date_of_birth: str = ""  # YYYY-MM-DD format
+    tool_name: str
+    action: str
+    parameters: Dict[str, Any]
+    result: Dict[str, Any]
+    success: bool
+    duration_ms: int
+    timestamp: datetime
 
-    # Generated account data
-    account_data: Optional[OutlookAccountData] = None
-
-    # Workflow progress
-    current_step: str = "init"
-    step_number: int = 0
-    total_steps: int = 9
-
-    # Step completion status
-    steps_completed: Dict[str, bool] = field(default_factory=lambda: {
-        "init": False,
-        "welcome": False, 
-        "email": False,
-        "password": False,
-        "details": False,
-        "name": False, 
-        "captcha": False,
-        "auth_wait": False,
-        "post_auth": False,
-        "verify": False
-    })
-
-    # Driver and tools
-    driver: Optional[Any] = None
-    screen_size: Optional[Dict[str, int]] = None
-
-    # Status tracking
-    success: bool = False
-    error_message: Optional[str] = None
-
-    # Logs and debugging
-    logs: List[str] = field(default_factory=list)
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-
-    # Retry tracking
-    retry_counts: Dict[str, int] = field(default_factory=lambda: {
-        "welcome": 0,
-        "email": 0,
-        "password": 0, 
-        "details": 0,
-        "name": 0,
-        "captcha": 0,
-        "auth_wait": 0,
-        "post_auth": 0
-    })
-
-    max_retries: int = 3
-
-    def add_log(self, message: str, step: Optional[str] = None):
-        """Add log message with timestamp"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
-        if step:
-            log_entry = f"[{timestamp}] [{step.upper()}] {message}"
-
-        self.logs.append(log_entry)
-        print(log_entry)
-
-    def mark_step_complete(self, step: str, success: bool = True):
-        """Mark step as completed"""
-        self.steps_completed[step] = success
-        if success:
-            self.add_log(f"✅ Step completed: {step}")
-        else:
-            self.add_log(f"❌ Step failed: {step}")
-
-    def set_current_step(self, step: str, step_number: int = None):
-        """Set current step"""
-        self.current_step = step
-        if step_number is not None:
-            self.step_number = step_number
-        self.add_log(f"📍 Starting step: {step} ({self.step_number}/{self.total_steps})")
-
-    def increment_retry(self, step: str) -> bool:
-        """
-        Increment retry count for step
-
-        Returns:
-            True if retries available, False if max reached
-        """
-        self.retry_counts[step] = self.retry_counts.get(step, 0) + 1
-
-        if self.retry_counts[step] <= self.max_retries:
-            self.add_log(f"🔄 Retry {self.retry_counts[step]}/{self.max_retries} for step: {step}")
-            return True
-        else:
-            self.add_log(f"❌ Max retries reached for step: {step}")
-            return False
-
-    def get_progress_percentage(self) -> int:
-        """Calculate progress percentage"""
-        completed_steps = sum(1 for completed in self.steps_completed.values() if completed)
-        return int((completed_steps / len(self.steps_completed)) * 100)
-
-    def set_error(self, error: str, step: Optional[str] = None):
-        """Set error state"""
-        self.success = False
-        self.error_message = error
-        self.end_time = datetime.now()
-
-        if step:
-            self.add_log(f"❌ Error in {step}: {error}")
-        else:
-            self.add_log(f"❌ Error: {error}")
-
-    def set_success(self):
-        """Set success state"""
-        self.success = True
-        self.error_message = None
-        self.end_time = datetime.now()
-        self.add_log("🎉 Outlook account creation completed successfully!")
-
-    def get_duration(self) -> Optional[float]:
-        """Get workflow duration in seconds"""
-        if self.start_time and self.end_time:
-            return (self.end_time - self.start_time).total_seconds()
-        return None
-
-    def get_summary(self) -> Dict[str, Any]:
-        """Get workflow summary"""
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
         return {
-            "process_id": self.process_id,
+            "tool_name": self.tool_name,
+            "action": self.action,
+            "parameters": self.parameters,
+            "result": self.result,
             "success": self.success,
-            "error_message": self.error_message,
-            "current_step": self.current_step,
-            "progress_percentage": self.get_progress_percentage(),
-            "steps_completed": self.steps_completed,
-            "duration_seconds": self.get_duration(),
-            "account_email": self.account_data.email if self.account_data else None,
-            "retry_counts": self.retry_counts,
-            "logs": self.logs[-10:]  # Last 10 logs
+            "duration_ms": self.duration_ms,
+            "timestamp": self.timestamp.isoformat()
         }
 
-    def should_continue(self) -> bool:
-        """Check if workflow should continue"""
-        return not self.success and self.error_message is None
+class OutlookAgentState(TypedDict):
+    """
+    ENHANCED: Complete state definition for agentic Outlook automation.
 
-    def reset_for_retry(self, step: str):
-        """Reset state for step retry"""
-        self.steps_completed[step] = False
-        self.error_message = None
-        self.add_log(f"🔄 Resetting step for retry: {step}")
+    Includes all fields needed for LLM decision making, tool orchestration,
+    OCR caching, error handling, and comprehensive logging.
+    """
 
-# Helper functions for state management
-def create_initial_state(process_id: str, first_name: str, last_name: str, 
-                        date_of_birth: str, curp_id: Optional[str] = None) -> OutlookAgentState:
-    """Create initial agent state"""
-    state = OutlookAgentState(
-        process_id=process_id,
-        curp_id=curp_id,
-        first_name=first_name,
-        last_name=last_name,
-        date_of_birth=date_of_birth,
-        start_time=datetime.now()
-    )
+    # Core identification
+    process_id: str
 
-    state.add_log(f"🚀 Initializing Outlook agent for {first_name} {last_name}")
-    return state
+    # User input data
+    first_name: str
+    last_name: str
+    date_of_birth: str
+    curp_id: Optional[str]
 
-def generate_outlook_account_data(first_name: str, last_name: str, 
-                                date_of_birth: str) -> OutlookAccountData:
-    """Generate Outlook account data from personal info"""
-    import random
-    from datetime import datetime
+    # Generated account data
+    account_data: Optional[OutlookAccountData]
 
-    # Clean names for email
-    first_clean = first_name.lower().replace(" ", "")
-    last_clean = last_name.lower().replace(" ", "")
+    # Workflow tracking
+    current_step: WorkflowStep
+    progress_percentage: int
+    steps_completed: Dict[str, bool]
+    success: bool
 
-    # Generate random numbers for email uniqueness
-    first_numbers = f"{random.randint(100, 999)}"
-    last_numbers = f"{random.randint(100, 999)}"
+    # *** STEP TRACKING FLAGS ***
+    email_typed: Optional[bool]
+    password_typed: Optional[bool]  # NEW: Added password_typed flag
+    first_name_typed: Optional[bool]
+    last_name_typed: Optional[bool]
+    details_dropdown_clicked: Optional[bool]
+    details_option_selected: Optional[bool]
 
-    # Create username and email
-    username = f"{first_clean}{first_numbers}{last_clean}{last_numbers}"
+    # LangGraph message history (for tool calls and LLM conversation)
+    messages: Annotated[List[AnyMessage], add_messages]
+
+    # Tool execution tracking
+    tool_call_history: List[ToolCallRecord]
+    consecutive_errors: int
+    retry_counts: Dict[str, int]
+
+    # Driver and screen context
+    driver: Optional[Any]  # Appium WebDriver instance
+    screen_size: Optional[Dict[str, int]]
+
+    # Error handling
+    error_message: Optional[str]
+    last_error_context: Optional[Dict[str, Any]]
+
+    # LLM integration
+    use_llm: bool
+    llm_analysis: Optional[Dict[str, Any]]
+
+    # Timing
+    start_time: float
+    end_time: Optional[float]
+    max_tool_calls: int
+
+    # Automation context
+    automation_goal: str
+
+def create_initial_state(
+    process_id: str,
+    first_name: str,
+    last_name: str,
+    date_of_birth: str,
+    curp_id: Optional[str] = None,
+    use_llm: bool = True
+) -> OutlookAgentState:
+    """Create initial state for Outlook automation workflow."""
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"🏗️ [{timestamp}] STATE: Creating initial workflow state...")
+
+    return {
+        # Core identification
+        "process_id": process_id,
+
+        # User input
+        "first_name": first_name,
+        "last_name": last_name,
+        "date_of_birth": date_of_birth,
+        "curp_id": curp_id,
+
+        # Account data (to be generated)
+        "account_data": None,
+
+        # Workflow state
+        "current_step": WorkflowStep.INIT,
+        "progress_percentage": 0,
+        "steps_completed": {},
+        "success": False,
+
+        # *** STEP TRACKING FLAGS ***
+        "email_typed": False,
+        "password_typed": False,  # NEW: Initialize password_typed flag
+        "first_name_typed": False,
+        "last_name_typed": False,
+        "details_dropdown_clicked": False,
+        "details_option_selected": False,
+
+        # Message history
+        "messages": [],
+
+        # Tool tracking
+        "tool_call_history": [],
+        "consecutive_errors": 0,
+        "retry_counts": {},
+
+        # Driver context
+        "driver": None,
+        "screen_size": None,
+
+        # Error handling
+        "error_message": None,
+        "last_error_context": None,
+
+        # LLM integration
+        "use_llm": use_llm,
+        "llm_analysis": None,
+
+        # Timing
+        "start_time": time.time(),
+        "end_time": None,
+        "max_tool_calls": 25,
+
+        # Context
+        "automation_goal": f"Create Outlook account for {first_name} {last_name}"
+    }
+
+def generate_outlook_account_data(first_name: str, last_name: str, date_of_birth: str) -> OutlookAccountData:
+    """Generate account data for Outlook registration."""
+
+    # Create a unique username base
+    name_part = f"{first_name.lower()}{last_name.lower()}"
+
+    # Add some randomization based on current time
+    timestamp_hash = str(int(time.time()))[-4:]
+
+    username = f"{name_part}{timestamp_hash}"
     email = f"{username}@outlook.com"
 
-    # Parse birth date
-    birth_date_obj = datetime.strptime(date_of_birth, "%Y-%m-%d")
-
-    months = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    ]
+    # Generate password (meeting typical requirements)
+    password_base = f"{first_name}{last_name}123!"
 
     return OutlookAccountData(
         username=username,
         email=email,
-        password="wrfyh@6498$",  # Secure fixed password
+        password=password_base,
         first_name=first_name,
-        last_name=last_name, 
-        birth_day=birth_date_obj.day,
-        birth_month=months[birth_date_obj.month - 1],
-        birth_year=birth_date_obj.year
+        last_name=last_name,
+        date_of_birth=date_of_birth
     )
+
+def add_tool_call_record(
+    state: OutlookAgentState,
+    tool_name: str,
+    action: str,
+    parameters: Dict[str, Any],
+    result: Dict[str, Any],
+    duration_ms: int,
+    success: bool
+) -> OutlookAgentState:
+    """Add a tool call record to the state history."""
+
+    record = ToolCallRecord(
+        tool_name=tool_name,
+        action=action,
+        parameters=parameters,
+        result=result,
+        success=success,
+        duration_ms=duration_ms,
+        timestamp=datetime.now()
+    )
+
+    state["tool_call_history"].append(record)
+
+    # Update retry counts
+    retry_key = f"{tool_name}.{action}"
+    if not success:
+        state["retry_counts"][retry_key] = state["retry_counts"].get(retry_key, 0) + 1
+
+    return state
+
+def set_current_step(state: OutlookAgentState, step: WorkflowStep, progress: int) -> OutlookAgentState:
+    """Update current workflow step and progress."""
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    old_step = state["current_step"].value if isinstance(state["current_step"], WorkflowStep) else state["current_step"]
+    new_step = step.value if isinstance(step, WorkflowStep) else step
+
+    print(f"📍 [{timestamp}] STATE: Step transition: {old_step} → {new_step} ({progress}%)")
+
+    state["current_step"] = step
+    state["progress_percentage"] = progress
+
+    return state
+
+def set_success(state: OutlookAgentState) -> OutlookAgentState:
+    """Mark automation as successful."""
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"🎉 [{timestamp}] STATE: Automation marked as successful!")
+
+    state["success"] = True
+    state["progress_percentage"] = 100
+    state["end_time"] = time.time()
+
+    return state
+
+def get_state_summary(state: OutlookAgentState) -> Dict[str, Any]:
+    """Get comprehensive state summary for reporting."""
+
+    duration = 0
+    if state.get("start_time") and state.get("end_time"):
+        duration = state["end_time"] - state["start_time"]
+    elif state.get("start_time"):
+        duration = time.time() - state["start_time"]
+
+    # Get recent tool activity
+    recent_tools = []
+    if state.get("tool_call_history"):
+        recent_calls = state["tool_call_history"][-5:]  # Last 5 calls
+        for call in recent_calls:
+            status_icon = "✅" if call.success else "❌"
+            recent_tools.append(
+                f"{status_icon} {call.tool_name}.{call.action} ({call.duration_ms}ms)"
+            )
+
+    return {
+        "process_id": state["process_id"],
+        "success": state.get("success", False),
+        "progress_percentage": state.get("progress_percentage", 0),
+        "current_step": state["current_step"].value if isinstance(state["current_step"], WorkflowStep) else state["current_step"],
+        "created_account": state["account_data"].email if state.get("account_data") else None,
+        "duration_seconds": round(duration, 1),
+        "tool_calls_made": len(state.get("tool_call_history", [])),
+        "use_llm": state.get("use_llm", False),
+        "error_message": state.get("error_message"),
+        "recent_tool_activity": recent_tools
+    }

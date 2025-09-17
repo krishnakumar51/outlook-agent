@@ -1,26 +1,46 @@
-# Mobile Outlook Agent Requirements
+# Mobile Outlook Agent - Agentic Version with OCR
+# Python 3.13+ compatible
 
-# Core dependencies
-fastapi>=0.100.0
-uvicorn>=0.20.0
-pydantic>=2.0.0
+# Core Agent Framework
+langgraph>=0.1.15
+langchain>=0.2.16
+langchain-core>=0.2.38
+langchain-groq>=0.1.9
 
-# Appium and mobile automation
-Appium-Python-Client>=3.0.0
-selenium>=4.10.0
+# LLM Provider SDKs
+google-generativeai>=0.8.3
+openai>=1.51.0
+anthropic>=0.34.2
 
-# LangGraph for agent workflow
-langgraph>=0.0.30
+# FastAPI Backend
+fastapi>=0.115.0
+starlette>=0.38.5
+uvicorn[standard]>=0.31.0
+python-multipart>=0.0.9
 
-# LLM Integrations
-langchain-groq>=0.1.0        # Groq LLM via LangChain
-anthropic>=0.25.0            # Anthropic Claude API
-openai>=1.0.0               # OpenAI GPT API
-google-generativeai>=0.3.0  # Google Gemini API
+# Data Models & Validation
+pydantic>=2.9.2
 
-# Database
-# sqlite3 is built into Python
+# OCR & Computer Vision Stack
+opencv-python-headless>=4.10.0.84
+pytesseract>=0.3.13
+pillow>=10.4.0
+numpy>=2.1.1
 
-# Utilities
-python-multipart>=0.0.6
-requests>=2.31.0
+# Optional Advanced OCR Engines
+easyocr>=1.7.1
+# paddleocr>=2.8.1  # Uncomment if using PaddleOCR (requires paddlepaddle)
+
+# Appium & Mobile Automation
+appium-python-client>=4.1.0
+
+# Utilities & Infrastructure
+tenacity>=9.0.0
+rich>=13.8.1
+requests>=2.32.3
+python-dateutil>=2.9.0
+orjson>=3.10.7
+
+# Development & Testing
+pytest>=8.3.3
+pytest-asyncio>=0.24.0

@@ -284,7 +284,7 @@ Respond with a structured plan.
 # Singleton helpers
 _llm_client_singleton = None
 
-def get_llm_client(provider: str = "groq") -> LLMClient:
+def get_llm_client(provider: str = "gemini") -> LLMClient:
     global _llm_client_singleton
     if _llm_client_singleton is None:
         _llm_client_singleton = LLMClient(default_provider=provider)

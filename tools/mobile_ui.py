@@ -353,3 +353,41 @@ class MobileUI:
 
         print(f"❌ Next button not found: {context}")
         return False
+    
+
+    def ui_exists(self, selector: str, strategy: str = "xpath") -> bool:
+        """Return True if an element matching selector exists (displayed)."""
+        try:
+            return self.ui_find_one(selector, strategy, timeout=3, retry_attempts=2) is not None
+        except Exception:
+            return False
+
+    def ui_wait_for(self, selector: str, strategy: str = "xpath", timeout: int = 10) -> bool:
+        """Wait until element is visible within timeout."""
+        try:
+            return self.ui_wait_element(selector, strategy=strategy, condition="visible", timeout=timeout)
+        except Exception:
+            return False
+
+    def ui_clear(self, selector: str, strategy: str = "xpath") -> bool:
+        """Clear text of an input field using element.clear(), with fallback."""
+        try:
+            element = self.ui_find_one(selector, strategy, timeout=5, retry_attempts=2)
+            if not element:
+                print(f"❌ Element not found for clear")
+                return False
+            try:
+                element.clear()
+                time.sleep(0.3)
+                return True
+            except Exception:
+                # Fallback: backspace clearing
+                current_text = element.get_attribute("text") or ""
+                for _ in range(len(current_text) + 5):
+                    self.driver.press_keycode(67)  # DEL
+                    time.sleep(0.02)
+                time.sleep(0.3)
+                return True
+        except Exception as e:
+            print(f"⚠️ Clear failed: {e}")
+            return False
